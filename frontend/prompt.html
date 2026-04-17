@@ -1,0 +1,269 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+  <title>AI Prompt Challenge - Hooni Academy</title>
+  <style>
+    /* 상훈님의 기존 스타일 유지 */
+    body { font-family: 'Malgun Gothic', sans-serif; background: #0d1b2a; color: #e0e1dd; margin: 0; padding: 20px; }
+    .container { max-width: 800px; margin: 0 auto; }
+    h1 { text-align: center; color: #00d9ff; text-shadow: 0 0 10px rgba(0,217,255,0.5); }
+    
+    /* [추가] 실시간 랭킹 컨테이너 스타일 */
+    #ranking-container { 
+        background: #1b263b; 
+        padding: 10px 15px; 
+        border-radius: 8px; 
+        margin-bottom: 20px; 
+        border: 1px solid #ffb703;
+        box-shadow: 0 0 10px rgba(255, 183, 3, 0.2);
+    }
+    #ranking-list { 
+        display: flex; 
+        gap: 15px; 
+        font-size: 0.85em; 
+        overflow-x: auto; 
+        white-space: nowrap;
+        scrollbar-width: thin;
+    }
+    .rank-item { color: #ffffff; }
+    .rank-item b { color: #ffb703; }
+
+    /* 입력창 및 버튼 */
+    .input-box { background: #1b263b; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.3); }
+    input { width: 70%; padding: 12px; border-radius: 5px; border: 1px solid #415a77; background: #0d1b2a; color: white; font-size: 16px; }
+    button { padding: 12px 25px; border: none; border-radius: 5px; cursor: pointer; background: #007BFF; color: white; font-weight: bold; transition: 0.3s; }
+    button:hover { background: #FF5722; transform: translateY(-2px); }
+    button:disabled { background: #444; cursor: not-allowed; }
+
+    /* 결과 카드 */
+    .result-container { display: flex; gap: 20px; margin-bottom: 20px; }
+    .result-card { flex: 1; background: #1b263b; border-left: 5px solid #007BFF; padding: 15px; border-radius: 5px; min-height: 120px; white-space: pre-wrap; font-size: 0.95em; }
+    
+    /* 실시간 공용 보드 */
+    #board { background: #000; border: 1px solid #415a77; border-radius: 5px; height: 300px; overflow-y: auto; padding: 15px; font-family: 'Courier New', monospace; font-size: 14px; line-height: 1.6; }
+    .log-entry { border-bottom: 1px solid #1b263b; padding: 5px 0; animation: fadeIn 0.5s; }
+    .log-time { color: #555; margin-right: 10px; }
+    .log-name { color: #00d9ff; font-weight: bold; }
+    
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+    
+    #status-bar { text-align: right; font-size: 12px; margin-bottom: 5px; color: #888; }
+    .status-online { color: #00ff00; }
+    .status-offline { color: #ff0000; }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>AI 프롬프트 챌린지</h1>
+  <div id="status-bar">서버 상태: <span id="conn-status" class="status-offline">연결 중...</span> | 참여자: <span id="participants">0</span>명</div>
+
+  <div id="ranking-container">
+    <div style="color: #ffb703; font-weight: bold; margin-bottom: 5px; font-size: 0.9em;">🏆 실시간 TOP 5 엔지니어</div>
+    <div id="ranking-list">데이터 로딩 중...</div>
+  </div>
+
+  <div class="input-box">
+    <input id="username" placeholder="엔지니어 이름을 입력하세요">
+    <button id="join-btn" onclick="join()">입장하기</button>
+  </div>
+
+  <div class="input-box">
+    <div id="round-display" style="margin-bottom:10px; font-weight:bold; color:#ffb703;">[Round 1] 라면 맛있게 설명하기 (기초)</div>
+    <input id="promptInput" placeholder="명령어(프롬프트)를 입력하세요" style="width:75%">
+    <button id="send-btn" onclick="sendPrompt()">전송</button>
+  </div>
+
+  <div class="result-container">
+    <div class="result-card"><strong>[내 서버 결과]</strong><div id="myLocal" style="margin-top:10px;">전송 대기 중...</div></div>
+    <div class="result-card"><strong>[상용 서비스 결과]</strong><div id="myExternal" style="margin-top:10px;">전송 대기 중...</div></div>
+  </div>
+
+  <h3>🚀 실시간 시스템 로그 (Global Board)</h3>
+  <div id="board"></div>
+</div>
+
+<script>
+  let username = localStorage.getItem("username") || "";
+  if(username) document.getElementById("username").value = username;
+
+  let currentRound = 1;
+  const roundTopics = [
+    "", 
+    "라면 맛있게 설명하기 (기초)",
+    "안성시 장점 홍보 (기초)",
+    "[역할] 요리사가 되어 라면 설명하기",
+    "[대상] 초등학생에게 안성시 설명하기",
+    "[형식] 학교 자랑거리 3가지 요약하기",
+    "[제약] '물' 단어 없이 라면 설명하기",
+    "[매체] SNS 스타일로 안성시 홍보하기",
+    "[문체] 인터뷰 형식으로 학교 자랑하기",
+    "[종합] 요리사가 자취생에게 표로 설명하기",
+    "[자유] AI 엔지니어로서 미래 상상하기"
+  ];
+
+  // [추가] 실시간 랭킹 업데이트 함수
+  async function updateRanking() {
+    try {
+        const res = await fetch("/api/ranking");
+        const data = await res.json();
+        const listEl = document.getElementById("ranking-list");
+        if(data.length === 0) {
+            listEl.innerText = "아직 기록이 없습니다. 첫 주인공이 되어보세요!";
+            return;
+        }
+        listEl.innerHTML = data.slice(0, 5).map((user, idx) => 
+            `<span class="rank-item">${idx+1}위: <b>${user.name}</b>(${user.total_score}점)</span>`
+        ).join(" <span style='color:#415a77'>|</span> ");
+    } catch(e) { console.log("Ranking update failed"); }
+  }
+
+  async function join() {
+    const name = document.getElementById("username").value.trim();
+    if(!name) return alert("이름을 입력하세요!");
+    
+    const btn = document.getElementById("join-btn");
+    btn.disabled = true;
+
+    try {
+      const res = await fetch("/join", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({name: name})
+      });
+      if(res.ok) {
+        username = name;
+        localStorage.setItem("username", name);
+        alert(name + " 엔지니어님, 시스템에 접속되었습니다.");
+        updateRanking(); // 입장 시 랭킹 즉시 갱신
+      }
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function sendPrompt() {
+    const promptText = document.getElementById("promptInput").value.trim();
+    if(!username) return alert("먼저 입장해주세요!");
+    if(!promptText) return alert("내용을 입력하세요!");
+
+    const btn = document.getElementById("send-btn");
+    btn.disabled = true;
+    btn.innerText = "분석 중...";
+
+    try {
+      const res = await fetch("/api/prompt", {
+        method: "POST",
+        headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({prompt: promptText, name: username, round: currentRound})
+      });
+      const data = await res.json();
+      
+      // 결과 출력 (innerHTML 대신 innerText로 보안 유지하되 개행문자 인식)
+      document.getElementById("myLocal").innerText = data.local;
+      document.getElementById("myExternal").innerText = data.external;
+      document.getElementById("promptInput").value = "";
+
+      // 라운드 진행 로직
+      if(currentRound < 10) {
+        currentRound++;
+        document.getElementById("round-display").innerText = `[Round ${currentRound}] ${roundTopics[currentRound]}`;
+      } else {
+        document.getElementById("round-display").innerText = "🎉 축하합니다! 모든 마스터 챌린지를 완료했습니다.";
+        document.getElementById("round-display").style.color = "#00ff00";
+        btn.innerText = "완료";
+        btn.disabled = true;
+      }
+      
+      // 전송 성공 후 랭킹 즉시 업데이트
+      setTimeout(updateRanking, 1000);
+
+    } catch(e) {
+      alert("서버 응답 지연 발생!");
+    } finally {
+      if(currentRound <= 10 && btn.innerText !== "완료") {
+        btn.disabled = false;
+        btn.innerText = "전송";
+      }
+    }
+  }
+
+  // SSE 로직
+  let evtSource;
+  function startStream() {
+    if(evtSource) evtSource.close();
+    evtSource = new EventSource("/stream");
+    const statusEl = document.getElementById("conn-status");
+
+    evtSource.onopen = () => {
+      statusEl.innerText = "연결됨";
+      statusEl.className = "status-online";
+    };
+
+    evtSource.onmessage = (e) => {
+      if (e.data === "ping") return;
+      const board = document.getElementById("board");
+      const entry = document.createElement("div");
+      entry.className = "log-entry";
+      const time = new Date().toLocaleTimeString();
+      entry.innerHTML = `<span class="log-time">[${time}]</span> ${e.data}`;
+      board.prepend(entry);
+      if(board.children.length > 30) board.lastChild.remove();
+    };
+
+    evtSource.onerror = () => {
+      statusEl.innerText = "재연결 중...";
+      statusEl.className = "status-offline";
+      evtSource.close();
+      setTimeout(startStream, 3000);
+    };
+  }
+
+  // 주기적 갱신 (참여자 수 및 랭킹)
+  setInterval(async () => {
+    try {
+      const res = await fetch("/stats");
+      const data = await res.json();
+      document.getElementById("participants").innerText = data.count;
+    } catch(e) {}
+  }, 5000);
+
+  // 7초마다 랭킹 정보 갱신 (서버 부하 고려)
+  setInterval(updateRanking, 7000);
+
+  startStream();
+  updateRanking(); // 초기 실행
+</script>
+</body>
+
+<div style="text-align: center; margin-top: 50px; padding: 20px 0;">
+    
+    <div style="display: inline-block; text-align: center; padding: 25px; background: rgba(255, 255, 255, 0.05); border-radius: 20px; border: 1px solid rgba(0, 217, 255, 0.2); box-shadow: 0 0 30px rgba(0,217,255,0.1); margin-bottom: 30px;">
+        <p style="color: #00d9ff; font-size: 1.1em; font-weight: bold; margin-top: 0; margin-bottom: 20px; text-shadow: 0 0 5px rgba(0,217,255,0.5);">
+            📱 스마트폰으로 스캔하여 함께 도전하세요!
+        </p>
+        
+        <div style="display: inline-block; background: white; padding: 12px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
+            <img src="qrcode_prompt1.hooni.xyz.png" alt="Challenge QR Code" 
+                 style="width: 200px; /* 크기 확대 */
+                        height: 200px; 
+                        display: block;
+                        /* 이미지 해상도 깨짐 방지 */
+                        image-rendering: -webkit-optimize-contrast; 
+                        image-rendering: crisp-edges;">
+        </div>
+        
+        <p style="font-size: 14px; color: #a0a0a0; margin-top: 15px; margin-bottom: 0; font-family: 'Courier New', monospace;">
+          prompt1.hooni.xyz / AI Prompt Challenge
+        </p>
+    </div>
+
+    <br>
+
+    <a href="/admin/dashboard" target="_blank" style="color: #415a77; text-decoration: none; font-size: 11px; opacity: 0.3; transition: opacity 0.3s;" onmouseover="this.style.opacity=1" onmouseout="this.style.opacity=0.3">
+        [ System Administration Host Only ]
+    </a>
+</div>
+
+</body>
+</html>

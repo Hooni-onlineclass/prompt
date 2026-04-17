@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Hooni Academy - 관리자 대시보드</title>
+  <style>
+    /* 상훈님의 기존 스타일 유지 및 보강 */
+    body { font-family: 'Malgun Gothic', sans-serif; background: #0d1b2a; color: #e0e1dd; padding: 20px; }
+    h1 { color: #00d9ff; text-align: center; margin-bottom: 30px; text-shadow: 0 0 15px rgba(0,217,255,0.3); }
+    
+    .stat-container { max-width: 1100px; margin: 0 auto; background: #1b263b; padding: 25px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+    
+    /* [추가] 랭킹 섹션 스타일 */
+    .ranking-section { 
+        background: #0d1b2a; 
+        padding: 20px; 
+        border-radius: 10px; 
+        margin-bottom: 30px; 
+        border: 2px solid #00d9ff;
+        box-shadow: inset 0 0 15px rgba(0,217,255,0.1);
+    }
+    .ranking-title { color: #ffb703; font-size: 1.4em; font-weight: bold; margin-bottom: 15px; display: flex; align-items: center; gap: 10px; }
+    
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th, td { padding: 12px; border-bottom: 1px solid #415a77; text-align: center; }
+    th { background: #007BFF; color: white; font-weight: bold; }
+    
+    /* 실시간 로그 테이블 특정 스타일 */
+    .log-table tr:hover { background: #2c3e50; transition: 0.2s; }
+    .high-score { color: #00ff00; font-weight: bold; text-shadow: 0 0 5px rgba(0,255,0,0.3); }
+    .round-tag { background: #ffb703; color: #000; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
+    
+    .refresh-btn { float: right; padding: 10px 20px; background: #FF5722; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+    .refresh-btn:hover { background: #e64a19; transform: scale(1.05); }
+
+    /* 랭킹 특화 스타일 */
+    .rank-1 { color: #ffd700; font-size: 1.2em; } /* 금메달 */
+    .rank-2 { color: #c0c0c0; } /* 은메달 */
+    .rank-3 { color: #cd7f32; } /* 동메달 */
+  </style>
+</head>
+<body>
+  <div class="stat-container">
+    <button class="refresh-btn" onclick="refreshAll()">수동 새로고침</button>
+    <h1>🚀 프롬프트 챌린지 실시간 리포트</h1>
+
+    <div class="ranking-section">
+        <div class="ranking-title">🏆 실시간 통합 랭킹 (Top 10)</div>
+        <table id="ranking-table">
+            <thead>
+                <tr>
+                    <th style="width: 10%;">순위</th>
+                    <th style="width: 30%;">엔지니어 이름</th>
+                    <th style="width: 30%;">총점 (최고점 합산)</th>
+                    <th style="width: 30%;">완료 라운드</th>
+                </tr>
+            </thead>
+            <tbody id="ranking-body">
+                </tbody>
+        </table>
+    </div>
+
+    <div class="log-section">
+        <h2 style="color: #00d9ff; font-size: 1.2em;">📝 전체 전송 로그 (최신순)</h2>
+        <table class="log-table">
+          <thead>
+            <tr>
+              <th style="width: 8%;">ID</th>
+              <th style="width: 15%;">엔지니어</th>
+              <th style="width: 12%;">라운드</th>
+              <th>프롬프트 내용</th>
+              <th style="width: 12%;">점수</th>
+            </tr>
+          </thead>
+          <tbody id="result-body">
+            </tbody>
+        </table>
+    </div>
+  </div>
+
+  <script>
+    // 1. 실시간 랭킹 로드 함수
+    async function loadRanking() {
+      try {
+        const res = await fetch("/api/ranking");
+        const data = await res.json();
+        const tbody = document.getElementById("ranking-body");
+        tbody.innerHTML = "";
+
+        data.forEach((user, index) => {
+          const rank = index + 1;
+          const rankClass = rank <= 3 ? `rank-${rank}` : "";
+          const row = `
+            <tr class="${rankClass}">
+                <td>${rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : rank}</td>
+                <td style="font-weight: bold;">${user.name}</td>
+                <td style="color: #ffb703; font-weight: bold;">${user.total_score}점</td>
+                <td>${user.completed_rounds} / 10</td>
+            </tr>
+          `;
+          tbody.innerHTML += row;
+        });
+      } catch(e) { console.error("랭킹 데이터 로드 실패:", e); }
+    }
+
+    // 2. 전체 로그 로드 함수 (상훈님 기존 로직 유지)
+    async function loadResults() {
+      try {
+        const res = await fetch("/api/all_results");
+        const data = await res.json();
+        const tbody = document.getElementById("result-body");
+        tbody.innerHTML = "";
+
+        data.forEach((item, index) => {
+          const row = document.createElement("tr");
+          const scoreClass = item.score >= 80 ? "high-score" : "";
+          
+          row.innerHTML = `
+            <td style="font-size: 12px; color: #888;">${data.length - index}</td>
+            <td style="font-weight: bold; color: #00d9ff;">${item.name || '익명'}</td>
+            <td><span class="round-tag">Rd ${item.round}</span></td>
+            <td style="text-align: left; max-width: 450px; font-size: 13px;">${item.prompt}</td>
+            <td class="${scoreClass}">${item.score || 0}점</td>
+          `;
+          tbody.appendChild(row);
+        });
+      } catch(e) { console.error("로그 데이터 로드 실패:", e); }
+    }
+
+    // 통합 새로고침
+    function refreshAll() {
+        loadRanking();
+        loadResults();
+    }
+
+    // 5초마다 자동 새로고침
+    setInterval(refreshAll, 5000); 
+    
+    // 초기 로드
+    refreshAll();
+  </script>
+</body>
+</html>
